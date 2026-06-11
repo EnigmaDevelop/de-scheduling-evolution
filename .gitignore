@@ -1,0 +1,46 @@
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Environment variables
+.env
+*.env
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Airflow
+airflow.db
+airflow.cfg
+standalone_admin_password.txt
+
+# Prefect
+.prefect/
+
+# Alembic
+*.pyc
+
+# Docker
+*.override.yml
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
