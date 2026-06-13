@@ -1,6 +1,6 @@
 # de-scheduling-evolution
 
-> One problem. Six tools. The real reason behind every decision.
+> One problem. Six tools. The real architectural reason behind every scheduling decision.
 
 ---
 
@@ -10,163 +10,118 @@ A data engineer needs to collect data. The collection must be automated, periodi
 
 **Which tool do they use?**
 
-The answer depends on context — company size, team maturity, infrastructure, cost. This project makes those contexts concrete.
+The answer depends entirely on context — company size, team maturity, infrastructure bounds, and cost profiles. This project makes those contexts concrete.
 
-The same pipeline is implemented six times, with six different scheduling tools. Each implementation starts where the previous tool falls short. Every decision is explained. Every trade-off is visible.
-
----
-
-## The Pipeline
-
-Every chapter solves the same problem:
-
-```
-Fetch weather data from OpenWeatherMap API
-        ↓
-Validate with Pydantic
-        ↓
-Upsert into PostgreSQL
-        ↓
-Schedule & automate
-```
-
-What changes across chapters: **only the scheduling layer.**
+The same ingestion pipeline is implemented six times across six different scheduling layers. Each implementation starts exactly where the previous tool hits its architectural limit. Every decision is explained. Every trade-off is measurable.
 
 ---
 
-## The Evolution
+## The Ingestion Contract
 
-| # | Tool | Story | Why We Left |
-|---|---|---|---|
-| 01 | Cron | I wrote a script, I want it to run automatically | No logging, no retry, silent failures |
-| 02 | APScheduler | I want to manage scheduling inside the application | Scheduler dies with the process, no state |
-| 03 | Celery Beat | It became distributed, I need a queue | No DAG, no dependency management |
-| 04 | Airflow | Dependencies exist, monitoring needed, team grew | Heavy on single server, not container-native |
-| 05 | Prefect | Airflow is too heavy, what is the modern alternative? | Weak native Kubernetes integration |
-| 06 | Airflow on Kubernetes | Everything runs on K8s, Airflow moves there too | — This is the peak |
+Every chapter solves the exact same data transfer problem:
+
+Fetch weather data from OpenWeatherMap API  
+↓  
+Validate constraints via Pydantic v2  
+↓  
+Commit via SQLAlchemy 2.0 ORM (Programmatic Alembic Migrations)  
+↓  
+Upsert into PostgreSQL (Storing mapped fields + Raw JSONB buffer layer)  
+↓  
+Automate & Schedule  
+
+What changes across chapters: **only the automation and scheduling layer.**
+
+---
+
+## The Evolution Matrix
+
+| #   | Tool                | Level                  | Architectural Identity                                                                                                        | Why We Left                                                                                                                    |
+|-----|---------------------|------------------------|-------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------|
+| **01** | **Cron**         | Junior DE / Single Node | Built-in OS automation, zero infrastructure overhead. Container acts as PID 1 boundary.                                      | **OS-level shell isolation, zero native observability dashboards, task overlapping under volume (no backpressure control).**  |
+| **02** | **APScheduler**  | In-app Threading       | Gömülü Python scheduling ecosystem, process-level lifecycle control.                                                          | *Pending execution analysis...*                                                                                                 |
+| **03** | **Celery Beat**  | Distributed Workers    | Task queue decoupling, asynchronous horizontal scale.                                                                         | *Pending execution analysis...*                                                                                                 |
+| **04** | **Airflow**      | Enterprise Orchestration | Heavy-weight central DAG dependency management and logging.                                                                  | *Pending execution analysis...*                                                                                                 |
+| **05** | **Prefect**      | Modern Orchestration   | Code-first dynamic tasks, low-boilerplate modern deployment hooks.                                                            | *Pending execution analysis...*                                                                                                 |
+| **06** | **Airflow on K8s** | Cloud-Native Peak     | Container-native task-isolation pods. True enterprise production standard.                                                    | — **The Architectural Ceiling**                                                                                                |
 
 ---
 
 ## Design Principles
 
-**Control variable correctness.**
-The data source (API) and destination (PostgreSQL) never change. Only the orchestration layer changes. This is a pure comparison — no noise, no distraction.
-
-**Every tool earns its place.**
-No tool is introduced without a concrete reason. Each chapter opens with the previous tool's failure.
-
-**Production standards from day one.**
-Even the simplest Cron implementation uses Pydantic for validation, Tenacity for retry, and Structlog for structured logging. The bar does not drop.
-
-**Zero cost.**
-Every implementation runs locally or with free, self-hosted tools. Paid alternatives are explained, not implemented.
+- **Control Variable Correctness:** The data source (API JSON layout) and target destination (PostgreSQL 16 Engine) never change. Only the orchestration boundary shifts. This isolates noise and creates a pure comparison framework.
+- **Every Tool Earns Its Place:** No tool is introduced as a default choice. Each chapter opens directly by breaking or throttling the previous layer's capacity.
+- **Production Standards from Day One:** Even the simplest Cron implementation enforces strict Pydantic parsing, Tenacity exponential backoff retries, unified Structlog structured JSON logs, and programmatic Alembic database state updates on container startup.
+- **Zero Cost Isolation:** Every tool runs completely locally or using free, self-hosted container images. Paid alternatives are technically evaluated but never implemented.
 
 ---
 
-## Each Chapter Contains
+## Technical Foundation: The Shared Layer
 
-```
-1. Story context      — Why the previous tool was not enough
-2. Implementation     — Setup, code, execution
-3. Identity card      — Cost, company type, team size, alternatives
-4. Decision guide     — When to use, when not to use
-5. Comparison         — What changed from the previous chapter
-```
+All standalone containers copy and reference the identical business layer directly to prevent code drift between chapters:
 
----
-
-## Identity Card Format
-
-Every tool is evaluated on the same axes:
-
-```
-Cost          → Zero / Low / Medium / High
-Company type  → Solo / Startup / Scale-up / Enterprise
-Team size     → Minimum and ideal
-Maturity      → Age and adoption
-Alternatives  → Free and paid options
-```
-
----
-
-## Technical Foundation
-
-### Shared Layer
-All chapters share the same core logic:
-
-```
+```text
 shared/
-├── extractor.py    → fetch_weather(city, target_time=None)
-├── loader.py       → PostgreSQL upsert
-├── models.py       → Pydantic schemas
-└── alembic/        → DB migrations, runs on startup
+├── alembic/      → Schema versioning scripts tracking engine states (e.g., unique_city_timestamp)
+├── alembic.ini   → Local and container configuration mapper
+├── extractor.py  → Low-level HTTP requests using Tenacity and structured logging
+├── loader.py     → SQLAlchemy ORM declaration, connection factory, and PostgreSQL transactional upserts
+└── models.py     → Strict Pydantic parsing schemas isolating raw buffers and parsed items
 ```
 
-### Key Decisions
+### Key Architectural Decisions
 
-**Idempotency**
-Unique constraint on `(city, timestamp)`. Duplicate runs do not corrupt data.
-
-**Time management**
-`target_time` parameter in every extractor call. Cron passes system time. Airflow passes `{{ ds }}`. Backfill works correctly.
-
-**Isolation**
-Each chapter has its own `requirements.txt` and `Dockerfile`. The shared layer is copied into each container. No dependency conflicts between chapters.
+- **Idempotency Contract:** Regulated via a database-level `UniqueConstraint('city', 'timestamp')`. Duplicate runs or backward backfills overwrite mutations safely without state corruption.
+- **The Raw JSON Buffer Layer:** To survive upstream API schema evolution, the pipeline saves the complete, raw API response inside a `JSONB` column during the upsert phase. This allows full historical reprocessing if downstream schema fields change retrospectively.
+- **Platform Isolation:** Each chapter directory operates independently, carrying its own explicit `requirements.txt`, `Dockerfile`, and local `docker-compose.yaml` linked externally to our shared infrastructure network boundary.
 
 ---
 
-## Repository Structure
+## Repository Directory Blueprint
 
-```
+```text
 de-scheduling-evolution/
 ├── README.md
-├── docker-compose.infra.yml     ← PostgreSQL + Redis
-├── shared/
-│   ├── __init__.py
+├── docker-compose.infra.yml      ← Common Infrastructure: PostgreSQL 16 + Redis 7 + pgAdmin
+├── shared/                       ← The immutable core layer copied during image compilation
+│   ├── alembic/
 │   ├── extractor.py
 │   ├── loader.py
-│   ├── models.py
-│   └── alembic/
-├── 01-cron/
-├── 02-apscheduler/
+│   └── models.py
+├── 01-cron/                      
+├── 02-apscheduler/               
 ├── 03-celery-beat/
 ├── 04-airflow/
 ├── 05-prefect/
 └── 06-airflow-on-kubernetes/
 ```
 
-Each directory runs independently. Each has its own README and identity card.
-
 ---
 
-## Cost Guarantee
+## Common Infrastructure Isolation
 
-| Tool | Local Solution |
-|---|---|
-| Cron | OS built-in |
-| APScheduler | pip install |
-| Celery Beat | pip install + Redis (Docker) |
-| Airflow | Docker, self-hosted |
-| Prefect | Self-hosted core |
-| Airflow on Kubernetes | Minikube + Helm |
+To guarantee resource optimization, the repository isolates data storage blocks from active compute layers. Run the primary infra layout once from the root directory:
+
+```bash
+docker-compose -f docker-compose.infra.yml up -d
+```
 
 ---
 
 ## Who Is This For?
 
-- A **junior data engineer** who needs to understand why tools exist, not just how to use them.
-- A **mid-level DE** making a scheduling decision for a new project.
-- A **tech lead** who needs a reference to explain trade-offs to their team.
-- Anyone who has ever installed Airflow for a five-minute script.
+- A **Junior Data Engineer** who needs to understand why enterprise tools exist, rather than just learning syntax.
+- A **Mid-level DE** tasked with choosing a scheduling architecture for a greenfield project.
+- A **Tech Lead** who needs a clear, reference-grade comparison to explain architectural trade-offs to stakeholders.
 
 ---
 
 ## What This Is Not
 
-- A tutorial on how to use each tool in isolation.
-- A benchmark with performance numbers.
-- A cloud deployment guide.
+- A basic tutorial on how to install tools in isolation.
+- A benchmark tracking raw performance numbers.
+- A vendor-driven cloud platform deployment manual.
 
 ---
 
-*Part of the `de-` series — reference-quality, open-source data engineering projects.*
+*Part of the `de-` series — reference-quality, open-source data engineering blueprints.*

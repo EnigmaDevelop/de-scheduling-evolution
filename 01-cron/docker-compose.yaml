@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  cron_scheduler:
+    build:
+      context: ..
+      dockerfile: 01-cron/Dockerfile
+    container_name: de_evolution_cron
+    restart: unless-stopped
+    networks:
+      - de_evolution_network
+    environment:
+      - POSTGRES_HOST=de_postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=de_user
+      - POSTGRES_PASSWORD=de_password
+      - POSTGRES_DB=de_scheduling
+      - TARGET_CITY=Istanbul
+      - OPENWEATHER_API_KEY=MOCK_MODE
+
+# Connect externally to the structural network boundary created in Phase 1
+networks:
+  de_evolution_network:
+    external: true
